@@ -1,0 +1,12 @@
+[Unit]
+Description=Asterisk Call Status
+After=network-online.target
+ 
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/asterisk_status/run.py
+ 
+[Install]
+WantedBy=multi-user.target
+
