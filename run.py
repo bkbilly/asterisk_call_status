@@ -80,7 +80,7 @@ class AsteriskStatus():
 
     def connection_listener(self, event, **kwargs):
         try:
-            #print(event.name)
+            print(f"callback: {event.name}")
             if event.name == 'FullyBooted':
                 #print("---===Started===---")
                 self.isconnected = True
@@ -92,12 +92,12 @@ class AsteriskStatus():
             elif event.name == 'StatusComplete':
                 for num, event in enumerate(self.tmp_events):
                     self.tmp_events[num]['chan_re'] = event['Channel']
-                    ass = re.match(r'\w*\/(\w*)-\w*', event['Channel'])
+                    ass = re.match(r'\w*\/(\S*)-\w*', event['Channel'])
                     if ass is not None:
                         self.tmp_events[num]['chan_re'] = ass.group(1)
                 self.events = self.link_events(self.tmp_events)
                 self.tmp_events = []
-            elif event.name in ['Newstate', 'HangupRequest',]:
+            elif event.name in ['Newstate', 'HangupRequest', 'DialEnd']:
                 self.sendaction_status()
         except Exception as e:
             print(e)
