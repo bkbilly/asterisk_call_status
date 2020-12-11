@@ -80,7 +80,8 @@ class AsteriskStatus():
 
     def connection_listener(self, event, **kwargs):
         try:
-            print(f"callback: {event.name}")
+            if event.name not in ['PeerStatus', 'RTCPSent', 'VarSet', 'Registry']:
+                print(f"callback: {event.name}")
             if event.name == 'FullyBooted':
                 #print("---===Started===---")
                 self.isconnected = True
@@ -97,7 +98,7 @@ class AsteriskStatus():
                         self.tmp_events[num]['chan_re'] = ass.group(1)
                 self.events = self.link_events(self.tmp_events)
                 self.tmp_events = []
-            elif event.name in ['Newstate', 'HangupRequest', 'DialEnd']:
+            elif event.name in ['Newstate', 'HangupRequest', 'DialEnd', 'Hangup', 'SoftHangupRequest']:
                 self.sendaction_status()
         except Exception as e:
             print(e)
