@@ -59,11 +59,12 @@ class AsteriskStatus():
             self.client = AMIClient(address=self.config['asterisk']['ip'], port=self.config['asterisk']['port'])
             self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
             self.client.add_event_listener(self.connection_listener)
-            self.sendaction_status()
 
             self.mqttc.username_pw_set(self.config['mqtt']['user'], password=self.config['mqtt']['pass'])
             self.mqttc.connect(self.config['mqtt']['ip'])
             self.mqttc.loop_start()
+
+            self.sendaction_status()
         except Exception as e:
             print(e)
 
@@ -142,7 +143,11 @@ class AsteriskStatus():
 if __name__ == "__main__":
     ast = AsteriskStatus()
     ast.connection_start()
+    repeatTimes = 0
     while True:
         time.sleep(1)
+        if repeatTimes > 60:
+            repeatTimes = 0
+            ast.sendaction_status()
     ast.logout()
 
