@@ -132,7 +132,7 @@ class AsteriskStatus():
             else:
                 topublish = 'idle'
             print(topublish)
-            self.mqttc.publish(self.config['mqtt']['topic'], topublish)
+            self.mqttc.publish(self.config['mqtt']['topic'], topublish, retain=True)
 
         except Exception as e:
             print(e)
