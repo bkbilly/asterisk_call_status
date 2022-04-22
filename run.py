@@ -56,13 +56,15 @@ class AsteriskStatus():
             self.tmp_events = []
             self.events = []
 
-            self.client = AMIClient(address=self.config['asterisk']['ip'], port=self.config['asterisk']['port'])
-            self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
-            self.client.add_event_listener(self.connection_listener)
+            if self.client is None:
+                self.client = AMIClient(address=self.config['asterisk']['ip'], port=self.config['asterisk']['port'])
+                self.client.add_event_listener(self.connection_listener)
+                self.mqttc.username_pw_set(self.config['mqtt']['user'], password=self.config['mqtt']['pass'])
+                self.mqttc.connect(self.config['mqtt']['ip'])
+                self.mqttc.loop_start()
 
-            self.mqttc.username_pw_set(self.config['mqtt']['user'], password=self.config['mqtt']['pass'])
-            self.mqttc.connect(self.config['mqtt']['ip'])
-            self.mqttc.loop_start()
+            self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
+
 
             self.sendaction_status()
         except Exception as e:
@@ -84,10 +86,10 @@ class AsteriskStatus():
             if event.name not in ['PeerStatus', 'RTCPSent', 'VarSet', 'Registry']:
                 print(f"callback: {event.name}")
             if event.name == 'FullyBooted':
-                #print("---===Started===---")
+                print("---===Started===---")
                 self.isconnected = True
             elif event.name == 'Shutdown':
-                #print("This is shuting down!!!")
+                print("This is shuting down!!!")
                 self.isconnected = False
             elif event.name == 'Status':
                 self.tmp_events.append(event)
@@ -145,6 +147,8 @@ if __name__ == "__main__":
     ast.connection_start()
     repeatTimes = 0
     while True:
+        if not ast.isconnected:
+            ast.connection_start()
         time.sleep(1)
         if repeatTimes > 60:
             repeatTimes = 0
