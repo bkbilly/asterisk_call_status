@@ -3,6 +3,7 @@
 from asterisk.ami import AMIClient
 from asterisk.ami import SimpleAction
 import time
+import json
 import re
 import yaml
 import paho.mqtt.client as mqtt
@@ -62,9 +63,24 @@ class AsteriskStatus():
                 self.mqttc.username_pw_set(self.config['mqtt']['user'], password=self.config['mqtt']['pass'])
                 self.mqttc.connect(self.config['mqtt']['ip'])
                 self.mqttc.loop_start()
+                hass_config = {
+                    "icon": "mdi:phone-voip",
+                    "state_topic": self.config['mqtt']['topic'],
+                    "name": "Asterisk Call Status",
+                    "unique_id": "asterisk_callstatus",
+                    "device": {
+                        "identifiers": [
+                            "Asterisk_Call_Status"
+                      ],
+                      "name": "Asterisk",
+                      "model": "Asterisk Call Status 0.5",
+                      "manufacturer": "bkbilly"
+                  }
+                }
 
+                topublish = json.dumps(hass_config)
+                self.mqttc.publish("homeassistant/sensor/asteriskcallstatus/config", topublish, retain=True)
             self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
-
 
             self.sendaction_status()
         except Exception as e:
