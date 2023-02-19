@@ -190,7 +190,10 @@ if __name__ == "__main__":
     with open('configuration.yaml') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    ast = AsteriskStatus(config['asterisk'], MyMQTT(config).publish)
+    mymqtt = MyMQTT(config)
+    if config['mqtt'].get('discovery', True):
+        mymqtt.setup_discovery()
+    ast = AsteriskStatus(config['asterisk'], mymqtt.publish)
     ast.connection_start()
     repeatTimes = 0
     while True:
