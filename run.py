@@ -2,127 +2,105 @@
 
 from asterisk.ami import AMIClient
 from asterisk.ami import SimpleAction
+import re
+
+import paho.mqtt.client as mqtt
+import traceback
 import time
 import json
-import re
 import yaml
-import paho.mqtt.client as mqtt
-
-
-
-def ReadConfig():
-    with open('/opt/asterisk_status/configuration.yaml') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    return config
 
 
 class AsteriskStatus():
-    isconnected = False
-    client = None
 
-    def __init__(self):
-        self.config = ReadConfig()
-        self.mqttc = mqtt.Client()
+    def __init__(self, config, callback):
+        self.config = config
+        self.callback = callback
+        self.isconnected = False
+        self.ami_client = None
+        self.cids = {}
 
     def logout(self):
-        self.client.logoff()
-
-    # Gets the Caller ID
-
-    def cid_start(self, cid):
-        self.cid_response = None
-        self.client = AMIClient(address=self.config['asterisk']['ip'], port=self.config['asterisk']['port'])
-        self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
-        self.client.add_event_listener(self.connection_listener)
-        self.client.add_event_listener(self.cid_listener)
-        self.sendaction_cid(cid)
-        return self.cid_response
-
-    def sendaction_cid(self, cid):
-        action = SimpleAction('DBGet', Family=self.config['asterisk']['dbname'], Key=cid)
-        future = self.client.send_action(action)
-        if future.response.status == 'Success':
-            while self.cid_response is None:
-                time.sleep(0.001)
-        self.logout()
-
-    def cid_listener(self, event, **kwargs):
-        if event.name == 'DBGetResponse':
-            self.cid_response = event['Val']
-
-    # Starts the main program
+        self.ami_client.logoff()
 
     def connection_start(self):
         try:
             self.tmp_events = []
-            self.events = []
 
-            if self.client is None:
-                self.client = AMIClient(address=self.config['asterisk']['ip'], port=self.config['asterisk']['port'])
-                self.client.add_event_listener(self.connection_listener)
-                self.mqttc.username_pw_set(self.config['mqtt']['user'], password=self.config['mqtt']['pass'])
-                self.mqttc.connect(self.config['mqtt']['ip'])
-                self.mqttc.loop_start()
-                hass_config = {
-                    "icon": "mdi:phone-voip",
-                    "state_topic": self.config['mqtt']['topic'],
-                    "name": "Asterisk Call Status",
-                    "unique_id": "asterisk_callstatus",
-                    "device": {
-                        "identifiers": [
-                            "Asterisk_Call_Status"
-                      ],
-                      "name": "Asterisk",
-                      "model": "Asterisk Call Status 0.5",
-                      "manufacturer": "bkbilly"
-                  }
-                }
-
-                topublish = json.dumps(hass_config)
-                self.mqttc.publish("homeassistant/sensor/asteriskcallstatus/config", topublish, retain=True)
-            self.client.login(username=self.config['asterisk']['user'], secret=self.config['asterisk']['pass'])
+            if self.ami_client is None:
+                self.ami_client = AMIClient(
+                    address=self.config['ip'],
+                    port=self.config['port'])
+                self.ami_client.add_event_listener(self.connection_listener)
+            self.ami_client.login(
+                username=self.config['user'],
+                secret=self.config['pass'])
 
             self.sendaction_status()
-        except Exception as e:
-            print(e)
+        except Exception:
+            traceback.print_exc()
 
     def get_cid(self, cid):
-        ass = AsteriskStatus()
-        return ass.cid_start(cid)
-        
+        if self.config['dbname'] is not None:
+            if cid not in self.cids:
+                action = SimpleAction(
+                    'DBGet',
+                    Family=self.config['dbname'],
+                    Key=cid)
+                self.ami_client.send_action(action)
+        return self.cids.get(cid, cid)
+
     def sendaction_status(self):
         try:
             action = SimpleAction('Status')
-            future = self.client.send_action(action)
-        except Exception as e:
-            print(e)
+            self.ami_client.send_action(action)
+        except Exception:
+            traceback.print_exc()
 
     def connection_listener(self, event, **kwargs):
         try:
             if event.name not in ['PeerStatus', 'RTCPSent', 'VarSet', 'Registry']:
                 print(f"callback: {event.name}")
             if event.name == 'FullyBooted':
-                print("---===Started===---")
+                # print("---===Started===---")
                 self.isconnected = True
+            elif event.name == 'DBGetResponse':
+                # print(event)
+                self.cids[event['Key']] = event['Val']
             elif event.name == 'Shutdown':
                 print("This is shuting down!!!")
                 self.isconnected = False
             elif event.name == 'Status':
                 self.tmp_events.append(event)
             elif event.name == 'StatusComplete':
+                # print(self.tmp_events)
                 for num, event in enumerate(self.tmp_events):
+                    # Add caller id on the list of known caller names
+                    caller_num = event['CallerIDNum']
+                    caller_name = event['CallerIDName']
+                    if caller_num not in self.cids:
+                        if caller_name != '<unknown>':
+                            self.cids[caller_num] = caller_name
+                    # Find the channel name
                     self.tmp_events[num]['chan_re'] = event['Channel']
                     ass = re.match(r'\w*\/(\S*)-\w*', event['Channel'])
                     if ass is not None:
                         self.tmp_events[num]['chan_re'] = ass.group(1)
-                self.events = self.link_events(self.tmp_events)
+                self.link_events(self.tmp_events)
                 self.tmp_events = []
             elif event.name in ['Newstate', 'HangupRequest', 'DialEnd', 'Hangup', 'SoftHangupRequest']:
                 self.sendaction_status()
-        except Exception as e:
-            print(e)
+        except Exception:
+            traceback.print_exc()
 
     def link_events(self, events):
+        """"""
+        calls_from = []
+        calls_to = []
+        cids_from = []
+        cids_to = []
+        channels = []
+        contexts = []
         try:
             filtered_events = [event for event in events if event['Uniqueid'] == event['Linkedid']]
             linked_events = [event for event in events if event['Uniqueid'] != event['Linkedid']]
@@ -138,28 +116,81 @@ class AsteriskStatus():
                 for link in linked:
                     lines_status.append(f"{link['chan_re']} ({link['ChannelStateDesc']})")
 
-                cid_from_txt = cid_from if cid_from is not None else filtered_event['CallerIDNum']
-                cid_to_txt = cid_to if cid_to is not None else filtered_event['Exten']
+                calls_from.append(filtered_event['CallerIDNum'])
+                calls_to.append(filtered_event['Exten'])
+                cids_from.append(cid_from)
+                cids_to.append(cid_to)
+                channels.append(filtered_event['chan_re'])
+                contexts.append(filtered_event['Context'])
+
                 lines_status_txt = ', '.join(lines_status)
 
-                out_print = f"{cid_from_txt}->{cid_to_txt} [{lines_status_txt}]"
+                out_print = f"{cid_from}->{cid_to} [{lines_status_txt}]"
                 all_event_prints.append(out_print)
 
             if len(all_event_prints) > 0:
                 topublish = ', '.join(all_event_prints)
             else:
                 topublish = 'idle'
-            print(topublish)
-            self.mqttc.publish(self.config['mqtt']['topic'], topublish, retain=True)
+            result = {
+                "status": topublish,
+                "calls_from": calls_from,
+                "calls_to": calls_to,
+                "cids_from": cids_from,
+                "cids_to": cids_to,
+                "channels": channels,
+                "contexts": contexts
+            }
+            self.callback(result)
 
-        except Exception as e:
-            print(e)
+        except Exception:
+            traceback.print_exc()
 
-        return events
+
+class MyMQTT():
+    def __init__(self, config):
+        self.config = config
+        self.mqttc = mqtt.Client()
+        self.mqttc.username_pw_set(
+            self.config['mqtt']['user'],
+            password=self.config['mqtt']['pass'])
+        self.mqttc.connect(self.config['mqtt']['ip'])
+        self.mqttc.loop_start()
+
+    def setup_discovery(self):
+        hass_config = {
+            "icon": "mdi:phone-voip",
+            "state_topic": self.config['mqtt']['topic'],
+            "name": "Asterisk Call Status",
+            "unique_id": "asterisk_callstatus",
+            "device": {
+                "identifiers": [
+                    "Asterisk_Call_Status"
+                ],
+                "name": "Asterisk",
+                "model": "Asterisk Call Status 0.5",
+                "manufacturer": "bkbilly"
+            }
+        }
+        topublish = json.dumps(hass_config)
+        self.mqttc.publish(
+            "homeassistant/sensor/asteriskcallstatus/config",
+            topublish,
+            retain=True)
+
+    def publish(self, topublish):
+        print(topublish)
+        self.mqttc.publish(
+            self.config['mqtt']['topic'],
+            topublish['status'],
+            retain=True)
 
 
 if __name__ == "__main__":
-    ast = AsteriskStatus()
+    with open('configuration.yaml') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+
+    ast = AsteriskStatus(config['asterisk'], MyMQTT(config).publish)
     ast.connection_start()
     repeatTimes = 0
     while True:
@@ -170,4 +201,3 @@ if __name__ == "__main__":
             repeatTimes = 0
             ast.sendaction_status()
     ast.logout()
-

@@ -5,6 +5,7 @@ After=network-online.target
 [Service]
 Type=simple
 User=root
+WorkingDirectory=/opt/asterisk_status/
 ExecStart=/usr/bin/python3 /opt/asterisk_status/run.py
  
 [Install]
