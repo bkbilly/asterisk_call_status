@@ -1,51 +1,100 @@
-#!/usr/bin/env python3
+"""Asterisk Call Status helper."""
+from PIL import Image, ImageFont, ImageDraw
+from io import BytesIO
+import logging
 
 from asterisk.ami import AMIClient
 from asterisk.ami import SimpleAction
 import re
+import pathlib
 
-import paho.mqtt.client as mqtt
 import traceback
-import time
-import json
-import yaml
+
+_LOGGER = logging.getLogger(__name__)
 
 
-class AsteriskStatus():
+def text_to_image(
+        text: str,
+        font_filepath: str,
+        font_size: int,
+        color: (int, int, int),
+        img_size: (int, int),
+        bg_color="white",
+        font_align="center"):
+    while True:
+        font = ImageFont.truetype(font_filepath, size=font_size)
+        box = font.getsize_multiline(text)
+        if box[0] < img_size[0] and box[1] < img_size[1]:
+            break
+        font_size -= 15
+    draw_point = (
+        (img_size[0] - box[0]) / 2,
+        (img_size[1] - box[1]) / 2
+    )
+    img = Image.new("RGB", img_size, color=bg_color)
+    draw = ImageDraw.Draw(img)
+    draw.multiline_text(draw_point, text, font=font,
+                        fill=color, align=font_align)
+    with BytesIO() as f:
+        img.save(f, format='PNG')
+        return f.getvalue()
 
-    def __init__(self, config, callback):
-        self.config = config
+
+class AsteriskCallStatusHelper():
+
+    def __init__(self, address, port, username, password, dbname=None, callback=None):
+        self.address = address
+        self.port = port
+        self.username = username
+        self.password = password
+        self.dbname = dbname
         self.callback = callback
         self.isconnected = False
         self.ami_client = None
+        self.image = None
+        self.result = {}
         self.cids = {}
 
-    def logout(self):
+    def get_results(self):
+        if not self.isconnected:
+            _LOGGER.info("Not connected, trying to connect right now")
+            self.connect()
+        return self.result
+
+    def save_results(self, result):
+        text = ("\n").join(result.get('status').split())
+        self.image = text_to_image(
+            text,
+            f"{pathlib.Path(__file__).parent}/FrederickatheGreat-Regular.ttf",
+            200, (20, 0, 255), (1024, 600))
+        self.result = result
+
+    def disconnect(self):
         self.ami_client.logoff()
 
-    def connection_start(self):
+    def connect(self):
         try:
             self.tmp_events = []
 
             if self.ami_client is None:
                 self.ami_client = AMIClient(
-                    address=self.config['ip'],
-                    port=self.config['port'])
+                    address=self.address,
+                    port=self.port)
                 self.ami_client.add_event_listener(self.connection_listener)
             self.ami_client.login(
-                username=self.config['user'],
-                secret=self.config['pass'])
+                username=self.username,
+                secret=self.password)
 
             self.sendaction_status()
         except Exception:
             traceback.print_exc()
 
     def get_cid(self, cid):
-        if self.config['dbname'] is not None:
+        if self.dbname is not None:
             if cid not in self.cids:
                 action = SimpleAction(
                     'DBGet',
-                    Family=self.config['dbname'],
+                    Family=self.dbname,
                     Key=cid)
                 self.ami_client.send_action(action)
         return self.cids.get(cid, cid)
@@ -60,20 +109,20 @@ class AsteriskStatus():
     def connection_listener(self, event, **kwargs):
         try:
             if event.name not in ['PeerStatus', 'RTCPSent', 'VarSet', 'Registry']:
-                print(f"callback: {event.name}")
+                _LOGGER.info(f"callback: {event.name}")
             if event.name == 'FullyBooted':
-                # print("---===Started===---")
+                # _LOGGER.info("---===Started===---")
                 self.isconnected = True
             elif event.name == 'DBGetResponse':
-                # print(event)
+                # _LOGGER.info(event)
                 self.cids[event['Key']] = event['Val']
             elif event.name == 'Shutdown':
-                print("This is shuting down!!!")
+                _LOGGER.info("This is shuting down!!!")
                 self.isconnected = False
             elif event.name == 'Status':
                 self.tmp_events.append(event)
             elif event.name == 'StatusComplete':
-                # print(self.tmp_events)
+                # _LOGGER.info(self.tmp_events)
                 for num, event in enumerate(self.tmp_events):
                     # Add caller id on the list of known caller names
                     caller_num = event['CallerIDNum']
@@ -112,9 +161,9 @@ class AsteriskStatus():
 
                 cid_from = self.get_cid(filtered_event['CallerIDNum'])
                 cid_to = self.get_cid(filtered_event['Exten'])
-                lines_status.append(f"{filtered_event['chan_re']} ({filtered_event['ChannelStateDesc']})")
+                lines_status.append(f"{filtered_event['chan_re']}({filtered_event['ChannelStateDesc']})")
                 for link in linked:
-                    lines_status.append(f"{link['chan_re']} ({link['ChannelStateDesc']})")
+                    lines_status.append(f"{link['chan_re']}({link['ChannelStateDesc']})")
 
                 calls_from.append(filtered_event['CallerIDNum'])
                 calls_to.append(filtered_event['Exten'])
@@ -123,7 +172,7 @@ class AsteriskStatus():
                 channels.append(filtered_event['chan_re'])
                 contexts.append(filtered_event['Context'])
 
-                lines_status_txt = ', '.join(lines_status)
+                lines_status_txt = ','.join(lines_status)
 
                 out_print = f"{cid_from}->{cid_to} [{lines_status_txt}]"
                 all_event_prints.append(out_print)
@@ -141,66 +190,8 @@ class AsteriskStatus():
                 "channels": channels,
                 "contexts": contexts
             }
-            self.callback(result)
+            _LOGGER.info(result)
+            self.save_results(result)
 
         except Exception:
             traceback.print_exc()
-
-
-class MyMQTT():
-    def __init__(self, config):
-        self.config = config
-        self.mqttc = mqtt.Client()
-        self.mqttc.username_pw_set(
-            self.config['mqtt']['user'],
-            password=self.config['mqtt']['pass'])
-        self.mqttc.connect(self.config['mqtt']['ip'])
-        self.mqttc.loop_start()
-
-    def setup_discovery(self):
-        hass_config = {
-            "icon": "mdi:phone-voip",
-            "state_topic": self.config['mqtt']['topic'],
-            "name": "Asterisk Call Status",
-            "unique_id": "asterisk_callstatus",
-            "device": {
-                "identifiers": [
-                    "Asterisk_Call_Status"
-                ],
-                "name": "Asterisk",
-                "model": "Asterisk Call Status 0.5",
-                "manufacturer": "bkbilly"
-            }
-        }
-        topublish = json.dumps(hass_config)
-        self.mqttc.publish(
-            "homeassistant/sensor/asteriskcallstatus/config",
-            topublish,
-            retain=True)
-
-    def publish(self, topublish):
-        print(topublish)
-        self.mqttc.publish(
-            self.config['mqtt']['topic'],
-            topublish['status'],
-            retain=True)
-
-
-if __name__ == "__main__":
-    with open('configuration.yaml') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-
-    mymqtt = MyMQTT(config)
-    if config['mqtt'].get('discovery', True):
-        mymqtt.setup_discovery()
-    ast = AsteriskStatus(config['asterisk'], mymqtt.publish)
-    ast.connection_start()
-    repeatTimes = 0
-    while True:
-        if not ast.isconnected:
-            ast.connection_start()
-        time.sleep(1)
-        if repeatTimes > 60:
-            repeatTimes = 0
-            ast.sendaction_status()
-    ast.logout()

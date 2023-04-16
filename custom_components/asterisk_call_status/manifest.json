@@ -1,0 +1,15 @@
+{
+  "domain": "asterisk_call_status",
+  "name": "asterisk_call_status",
+  "config_flow": true,
+  "documentation": "https://github.com/bkbilly/asterisk_call_status",
+  "issue_tracker": "https://github.com/bkbilly/asterisk_call_status/issues",
+  "requirements": ["asterisk-ami==0.1.5", "Pillow==9.4.0"],
+  "ssdp": [],
+  "zeroconf": [],
+  "homekit": {},
+  "dependencies": [],
+  "codeowners": ["@bkbilly"],
+  "iot_class": "local_push",
+  "version": "0.0.0"
+}

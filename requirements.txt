@@ -1,3 +1,0 @@
-asterisk-ami==0.1.5
-PyYAML>=5.3.1
-paho-mqtt>=1.5.0
