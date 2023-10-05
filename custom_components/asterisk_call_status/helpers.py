@@ -21,20 +21,19 @@ def text_to_image(
         img_size: (int, int),
         bg_color="white",
         font_align="center"):
+    img = Image.new("RGB", img_size, color=bg_color)
+    draw = ImageDraw.Draw(img)
     while True:
         font = ImageFont.truetype(font_filepath, size=font_size)
-        box = font.getsize_multiline(text)
-        if box[0] < img_size[0] and box[1] < img_size[1]:
+        _, _, w, h = draw.textbbox((0, 0), text, font=font)
+        if w < img_size[0] and h < img_size[1]:
             break
         font_size -= 15
     draw_point = (
-        (img_size[0] - box[0]) / 2,
-        (img_size[1] - box[1]) / 2
+        int((img_size[0] - w) / 2),
+        int((img_size[1] - h) / 2)
     )
-    img = Image.new("RGB", img_size, color=bg_color)
-    draw = ImageDraw.Draw(img)
-    draw.multiline_text(draw_point, text, font=font,
-                        fill=color, align=font_align)
+    draw.text(draw_point, text, font=font, fill=color, align=font_align)
     with BytesIO() as f:
         img.save(f, format='PNG')
         return f.getvalue()
