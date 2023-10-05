@@ -63,11 +63,15 @@ class AsteriskCallStatusHelper():
 
     def save_results(self, result):
         text = ("\n").join(result.get('status').split())
-        self.image = text_to_image(
-            text,
-            f"{pathlib.Path(__file__).parent}/FrederickatheGreat-Regular.ttf",
-            200, (20, 0, 255), (1024, 600))
-        self.result = result
+        _LOGGER.info(f"Reading from font: {pathlib.Path(__file__).parent}/FrederickatheGreat-Regular.ttf")
+        try:
+            self.image = text_to_image(
+                text,
+                f"{pathlib.Path(__file__).parent}/FrederickatheGreat-Regular.ttf",
+                200, (20, 0, 255), (1024, 600))
+        except Exception as e:
+            _LOGGER.error(e)
+        _LOGGER.info("Created a new image as a self.image")
 
     def disconnect(self):
         self.ami_client.logoff()
@@ -181,7 +185,7 @@ class AsteriskCallStatusHelper():
                 topublish = ', '.join(all_event_prints)
             else:
                 topublish = 'idle'
-            result = {
+            self.result = {
                 "status": topublish,
                 "calls_from": calls_from,
                 "calls_to": calls_to,
@@ -190,8 +194,8 @@ class AsteriskCallStatusHelper():
                 "channels": channels,
                 "contexts": contexts
             }
-            _LOGGER.info(result)
-            self.save_results(result)
+            _LOGGER.info(self.result)
+            self.save_results(self.result)
 
         except Exception:
             traceback.print_exc()
