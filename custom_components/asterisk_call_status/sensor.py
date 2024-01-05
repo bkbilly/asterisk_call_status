@@ -7,16 +7,8 @@ import logging
 
 from homeassistant import config_entries
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
-    SensorStateClass,
-)
-from homeassistant.const import (
-    PERCENTAGE,
-    TIME_SECONDS,
-    SIGNAL_STRENGTH_DECIBELS,
-    LENGTH_METERS,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
