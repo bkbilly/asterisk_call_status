@@ -90,7 +90,7 @@ class AsteriskCallStatusHelper():
 
             self.sendaction_status()
         except Exception:
-            traceback.print_exc()
+            _LOGGER.error(traceback.format_exc())
 
     def get_cid(self, cid):
         if self.dbname is not None:
@@ -107,7 +107,7 @@ class AsteriskCallStatusHelper():
             action = SimpleAction('Status')
             self.ami_client.send_action(action)
         except Exception:
-            traceback.print_exc()
+            _LOGGER.error(traceback.format_exc())
 
     def connection_listener(self, event, **kwargs):
         try:
@@ -143,7 +143,7 @@ class AsteriskCallStatusHelper():
             elif event.name in ['Newstate', 'HangupRequest', 'DialEnd', 'Hangup', 'SoftHangupRequest']:
                 self.sendaction_status()
         except Exception:
-            traceback.print_exc()
+            _LOGGER.error(traceback.format_exc())
 
     def link_events(self, events):
         """"""
@@ -197,4 +197,4 @@ class AsteriskCallStatusHelper():
             self.save_results(self.result)
 
         except Exception:
-            traceback.print_exc()
+            _LOGGER.error(traceback.format_exc())
