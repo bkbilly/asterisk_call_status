@@ -82,7 +82,8 @@ class AsteriskCallStatusHelper():
             if self.ami_client is None:
                 self.ami_client = AMIClient(
                     address=self.address,
-                    port=self.port)
+                    port=self.port,
+                    timeout=None)
                 self.ami_client.add_event_listener(self.connection_listener)
             self.ami_client.login(
                 username=self.username,
